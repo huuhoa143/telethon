@@ -113,7 +113,9 @@ def get_member_running(path_file):
     else:
         with open(path_file, encoding='UTF-8') as f:
             rows = csv.reader(f, delimiter=",", lineterminator="\n")
-            users.append(rows)
+            for row in rows:
+                if row:
+                    users.append(row[0])
     return users
 
 
@@ -155,7 +157,7 @@ def add_member(client, input_file, target_group):
         else:
             if n % 50 == 0:
                 print('Sleep 1800s')
-                time.sleep(1800)
+                time.sleep(180)
             try:
                 print('Adding {} '.format(user['id']))
                 if mode == 1:
@@ -180,6 +182,7 @@ def add_member(client, input_file, target_group):
                 time.sleep(20)
             except PeerFloodError:
                 print("Getting Flood Error from telegram. Script is stopping now. Please try again after some time.")
+                break
             except UserPrivacyRestrictedError:
                 print("The user's privacy settings do not allow you to do this. Skipping.")
             except UserChannelsTooMuchError:
