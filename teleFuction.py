@@ -1,13 +1,15 @@
 from telethon.sync import TelegramClient
 from telethon.tl.functions.messages import GetDialogsRequest
 from telethon.tl.types import InputPeerEmpty, InputPeerChannel, InputPeerUser
-from telethon.tl.functions.channels import InviteToChannelRequest
-from telethon.errors.rpcerrorlist import PeerFloodError, UserPrivacyRestrictedError, UserChannelsTooMuchError
+from telethon.tl.functions.channels import InviteToChannelRequest, GetFullChannelRequest
+from telethon.errors.rpcerrorlist import PeerFloodError, UserPrivacyRestrictedError, UserChannelsTooMuchError, UserBannedInChannelError, UserBlockedError, UserKickedError
 import csv
 import sys
 import traceback
 import time
 import os
+from datetime import datetime
+
 from decouple import config
 
 
@@ -74,20 +76,30 @@ def fetching_member(client, path_file, target_group):
         writer = csv.writer(f, delimiter=',', lineterminator='\n')
         writer.writerow(['username', 'user id', 'access hash', 'name', 'group', 'group id'])
         for user in all_participants:
-            if user.username:
-                username = user.username
-            else:
-                username = ''
-            if user.first_name:
-                first_name = user.first_name
-            else:
-                first_name = ''
-            if user.last_name:
-                last_name = user.last_name
-            else:
-                last_name = ''
-            name = (first_name + ' ' + last_name).strip()
-            writer.writerow([username, user.id, user.access_hash, name, target_group.title, target_group.id])
+            accept = True
+            try:
+                lastDate = user.status.was_online
+                num_months = (datetime.now().year - lastDate.year) * 12 + (datetime.now().month - lastDate.month)
+                if (num_months > 1):
+                    accept= True
+            except:
+                continue
+
+            if accept:
+                if user.username:
+                    username = user.username
+                else:
+                    username = ''
+                if user.first_name:
+                    first_name = user.first_name
+                else:
+                    first_name = ''
+                if user.last_name:
+                    last_name = user.last_name
+                else:
+                    last_name = ''
+                name = (first_name + ' ' + last_name).strip()
+                writer.writerow([username, user.id, user.access_hash, name, target_group.title, target_group.id])
     print('Members scraped successfully')
 
 
@@ -113,8 +125,15 @@ def get_member_running(path_file):
     else:
         with open(path_file, encoding='UTF-8') as f:
             rows = csv.reader(f, delimiter=",", lineterminator="\n")
-            users.append(rows)
+            for row in rows:
+                if row:
+                    users.append(row[0])
     return users
+
+
+def get_channel_info(client, channel_entity):
+    channel_full_info = client(GetFullChannelRequest(channel=channel_entity))
+    return channel_full_info
 
 
 def add_member(client, input_file, target_group):
@@ -138,8 +157,6 @@ def add_member(client, input_file, target_group):
         channel_access_hash = target_group.access_hash
 
     target_group_entity = InputPeerChannel(channel_id, channel_access_hash)
-    print(target_group_entity)
-    mode = int(input("Enter 1 to add by username or 2 to add by ID: "))
 
     n = 0
     for user in users:
@@ -153,37 +170,50 @@ def add_member(client, input_file, target_group):
             print('Member Added {} '.format(check))
             continue
         else:
-            if n % 50 == 0:
-                print('Sleep 1800s')
-                time.sleep(1800)
             try:
                 print('Adding {} '.format(user['id']))
-                if mode == 1:
-                    if user['username'] == '':
-                        continue
-                    user_to_add = client.get_input_entity(user['username'])
-                elif mode == 2:
+                if user['username']:
                     user_to_add = InputPeerUser(user['id'], user['access_hash'])
+
+                    print(target_group_entity, user_to_add)
+                    result = client(InviteToChannelRequest(target_group_entity, [user_to_add]))
+
+                    if not result.updates:
+                        print("Add Fail")
+                    else:
+                        print("Add Success")
+
+                    if hasattr(user, 'id'):
+                        content = user['id']
+                    else:
+                        content = user['username']
+
+                    channel_info = get_channel_info(client, target_group)
+
+                    total_member = channel_info.full_chat.participants_count
+
+                    print('Total Member: {} '.format(total_member))
+
+                    append_new_line(running_member_file, content)
+
+                    print("Waiting 20 second .....")
+                    time.sleep(20)
                 else:
-                    sys.exit("Invalid Mode Selected. Please Try Again.")
-                client(InviteToChannelRequest(target_group_entity, [user_to_add]))
-
-                print('Writing to {}'.format(running_member_file))
-                if hasattr(user, 'id'):
-                    content = user['id']
-                else:
-                    content = user['username']
-
-                append_new_line(running_member_file, content)
-
-                print("Waiting 20 second .....")
-                time.sleep(20)
+                    print("NOT USER NAME")
+                    continue
             except PeerFloodError:
                 print("Getting Flood Error from telegram. Script is stopping now. Please try again after some time.")
+                break
             except UserPrivacyRestrictedError:
                 print("The user's privacy settings do not allow you to do this. Skipping.")
             except UserChannelsTooMuchError:
                 print("One of the users you tried to add is already in too many channels/supergroups. Skipping.")
+            except UserBannedInChannelError:
+                print("You're banned from sending messages in supergroups/channels.. Skipping.")
+            except UserBlockedError:
+                print("User blocked. Skipping.")
+            except UserKickedError:
+                print("This user was kicked from this supergroup/channel.")
             except:
                 traceback.print_exc()
                 print("Unexpected Error")

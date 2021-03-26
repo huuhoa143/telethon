@@ -42,11 +42,10 @@ def main():
     client = connect.con(phone, api_id, api_hash)
     data = teleFuction.get_data(client)
 
-    list_owner_group = get_owner_group(data)
+    # list_owner_group = get_owner_group(data)
 
+    main_group = client.get_entity('https://t.me/joinchat/nk7OjRbItjphMzA9')
     list_mega_group = get_mega_group(data)
-
-    main_group = teleFuction.get_main_group(list_owner_group)
 
     target_group = teleFuction.get_target_group(list_mega_group)
 
